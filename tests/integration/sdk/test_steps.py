@@ -1,4 +1,5 @@
 import time
+from typing import Any
 
 import pytest
 from dotenv import load_dotenv
@@ -32,15 +33,26 @@ def test_new_steps():
     assert first_action is not None, f"{session_steps[0]} should have an action"
     assert first_action["type"] == "goto", "First action should be goto"
 
-    # Find the last execution_result with an action (skip agent_step_stop)
-    execution_results = [s for s in session_steps if s["type"] == "execution_result" and s["value"].get("action")]
+    # Find the last execution_result carrying a page action. The agent records its
+    # final `completion` as an execution_result too, so skip those: the last real
+    # page action must be the fill.
+    def page_actions(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            s
+            for s in steps
+            if s["type"] == "execution_result"
+            and s["value"].get("action")
+            and s["value"]["action"]["type"] != "completion"
+        ]
+
+    execution_results = page_actions(session_steps)
     assert len(execution_results) >= 2, "Should have at least 2 execution results (goto + fill)"
 
     last_action = execution_results[-1]["value"]["action"]
     assert last_action["type"] == "fill", f"Last action should be fill, got {last_action['type']}"
 
-    # Verify the last agent execution_result matches
-    agent_execution_results = [s for s in agent_steps if s["type"] == "execution_result" and s["value"].get("action")]
+    # Verify the last agent page action matches
+    agent_execution_results = page_actions(agent_steps)
     assert len(agent_execution_results) >= 1, "Agent should have at least 1 execution result"
     assert agent_execution_results[-1]["value"]["action"] == last_action
 
